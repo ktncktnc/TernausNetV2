@@ -6,16 +6,16 @@ import torch.autograd as autograd
 import torch.distributed as distributed
 from torch.autograd.function import once_differentiable
 
-from . import _backend
+from . import backend
 
 
 def _activation_from_name(activation):
     if activation == "leaky_relu":
-        return _backend.Activation.LeakyReLU
+        return backend.Activation.LeakyReLU
     elif activation == "elu":
-        return _backend.Activation.ELU
+        return backend.Activation.ELU
     elif activation == "identity":
-        return _backend.Activation.Identity
+        return backend.Activation.Identity
     else:
         raise ValueError("Unknown activation function {}".format(activation))
 
@@ -44,7 +44,7 @@ class InPlaceABN(autograd.Function):
             list(all_count.unbind(0)), count, group=group, async_op=False
         )
 
-        return _backend.reduce_statistics(all_mean, all_var, all_count)
+        return backend.reduce_statistics(all_mean, all_var, all_count)
 
     @staticmethod
     def _reduce_backward(sum_dy, sum_xhat_dy, group):
@@ -81,7 +81,7 @@ class InPlaceABN(autograd.Function):
         ctx.has_running_stats = running_mean is not None and running_mean is not None
 
         if ctx.training:
-            mean, var, count = _backend.statistics(x)
+            mean, var, count = backend.statistics(x)
 
             # Gather stats from all workers if needed
             if ctx.world_size > 1:
@@ -100,7 +100,7 @@ class InPlaceABN(autograd.Function):
             mean, var, count = running_mean, running_var, None
 
         # Transform x
-        _backend.forward(
+        backend.forward(
             x, mean, var, weight, bias, ctx.eps, ctx.activation, ctx.activation_param
         )
 
@@ -116,7 +116,7 @@ class InPlaceABN(autograd.Function):
 
         # Call backward_reduce if we need to compute at least one of the gradients
         if any(ctx.needs_input_grad):
-            xhat, dy, sum_dy_local, sum_xhat_dy_local = _backend.backward_reduce(
+            xhat, dy, sum_dy_local, sum_xhat_dy_local = backend.backward_reduce(
                 y_act,
                 dy_act,
                 weight,
@@ -139,12 +139,12 @@ class InPlaceABN(autograd.Function):
         if ctx.needs_input_grad[0]:
             if ctx.training:
                 # This overwrites dy with dx
-                _backend.backward_train(
+                backend.backward_train(
                     xhat, dy, var, count, sum_dy, sum_xhat_dy, weight, ctx.eps
                 )
                 dx = dy
             else:
-                dx = _backend.backward_test(dy, var, weight, ctx.eps)
+                dx = backend.backward_test(dy, var, weight, ctx.eps)
         else:
             dx = None
 
